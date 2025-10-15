@@ -1,0 +1,652 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# Missing Data Handling - Complete Guide\n",
+    "\n",
+    "This notebook demonstrates different strategies for handling missing values in datasets. We'll compare their performance so you can choose the best approach for our projects.\n",
+    "\n",
+    "**Business Impact:** Choosing the right missing data strategy can significantly improve model accuracy and save development time."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Setup: Import Required Libraries"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "import pandas as pd\n",
+    "import numpy as np\n",
+    "from sklearn.model_selection import train_test_split\n",
+    "from sklearn.ensemble import RandomForestRegressor\n",
+    "from sklearn.impute import SimpleImputer, KNNImputer\n",
+    "from sklearn.experimental import enable_iterative_imputer\n",
+    "from sklearn.impute import IterativeImputer\n",
+    "from sklearn.metrics import mean_absolute_error\n",
+    "import matplotlib.pyplot as plt\n",
+    "import warnings\n",
+    "warnings.filterwarnings('ignore')"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Step 1: Create Sample Dataset with Missing Values\n",
+    "\n",
+    "For demonstration, we're creating a realistic dataset similar to what we might encounter in production. The dataset simulates a loan application scenario with features like age, income, credit score, etc.\n",
+    "\n",
+    "**In practice, you would load your actual data here using:**\n",
+    "```python\n",
+    "df = pd.read_csv('your_data.csv')\n",
+    "```"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "print(\"=\"*60)\n",
+    "print(\"CREATING SAMPLE DATASET\")\n",
+    "print(\"=\"*60)\n",
+    "\n",
+    "np.random.seed(42)\n",
+    "n_samples = 1000\n",
+    "\n",
+    "# Create a dataset with correlated features (like real-world data)\n",
+    "data = {\n",
+    "    'age': np.random.randint(18, 70, n_samples),\n",
+    "    'income': np.random.randint(30000, 150000, n_samples),\n",
+    "    'credit_score': np.random.randint(300, 850, n_samples),\n",
+    "    'years_employed': np.random.randint(0, 40, n_samples),\n",
+    "    'debt': np.random.randint(0, 100000, n_samples)\n",
+    "}\n",
+    "\n",
+    "df = pd.DataFrame(data)\n",
+    "\n",
+    "# Create target variable (e.g., loan approval amount)\n",
+    "df['loan_amount'] = (\n",
+    "    df['income'] * 0.3 + \n",
+    "    df['credit_score'] * 50 - \n",
+    "    df['debt'] * 0.2 + \n",
+    "    np.random.normal(0, 5000, n_samples)\n",
+    ")\n",
+    "\n",
+    "# Introduce missing values (simulating real-world scenario)\n",
+    "# About 15-20% missing in some columns\n",
+    "missing_mask_income = np.random.random(n_samples) < 0.15\n",
+    "missing_mask_credit = np.random.random(n_samples) < 0.20\n",
+    "missing_mask_employed = np.random.random(n_samples) < 0.10\n",
+    "\n",
+    "df.loc[missing_mask_income, 'income'] = np.nan\n",
+    "df.loc[missing_mask_credit, 'credit_score'] = np.nan\n",
+    "df.loc[missing_mask_employed, 'years_employed'] = np.nan\n",
+    "\n",
+    "print(f\"\\nDataset created with {len(df)} rows and {len(df.columns)-1} features\")\n",
+    "print(f\"\\nMissing values per column:\")\n",
+    "print(df.isnull().sum())\n",
+    "print(f\"\\nPercentage missing:\")\n",
+    "print((df.isnull().sum() / len(df) * 100).round(2))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Step 2: Split Data into Training and Validation Sets\n",
+    "\n",
+    "**Critical:** We always split BEFORE handling missing values to avoid data leakage. This ensures our validation set truly represents unseen data."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "y = df['loan_amount']\n",
+    "X = df.drop(['loan_amount'], axis=1)\n",
+    "\n",
+    "X_train, X_valid, y_train, y_valid = train_test_split(\n",
+    "    X, y, train_size=0.8, test_size=0.2, random_state=42\n",
+    ")\n",
+    "\n",
+    "print(f\"Training set: {len(X_train)} rows\")\n",
+    "print(f\"Validation set: {len(X_valid)} rows\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Helper Function: Evaluate Model Performance\n",
+    "\n",
+    "This function trains a Random Forest model and calculates Mean Absolute Error (MAE). Lower MAE = better performance."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def evaluate_approach(X_train, X_valid, y_train, y_valid, approach_name):\n",
+    "    \"\"\"\n",
+    "    Trains a model and returns the MAE (Mean Absolute Error).\n",
+    "    Lower MAE = better performance.\n",
+    "    \"\"\"\n",
+    "    model = RandomForestRegressor(n_estimators=50, random_state=42, n_jobs=-1)\n",
+    "    model.fit(X_train, y_train)\n",
+    "    predictions = model.predict(X_valid)\n",
+    "    mae = mean_absolute_error(y_valid, predictions)\n",
+    "    return mae"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "---\n",
+    "\n",
+    "# Method 1: Drop Columns with Missing Values\n",
+    "\n",
+    "**Strategy:** Remove any column that has at least one missing value\n",
+    "\n",
+    "**Best for:** When columns have >60% missing or aren't critical features\n",
+    "\n",
+    "**Pros:** Simple, fast, no assumptions about missing data\n",
+    "\n",
+    "**Cons:** Loses potentially valuable information"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "print(\"=\"*60)\n",
+    "print(\"METHOD 1: DROP COLUMNS WITH MISSING VALUES\")\n",
+    "print(\"=\"*60)\n",
+    "\n",
+    "cols_with_missing = [col for col in X_train.columns if X_train[col].isnull().any()]\n",
+    "print(f\"\\nColumns to drop: {cols_with_missing}\")\n",
+    "\n",
+    "reduced_X_train = X_train.drop(cols_with_missing, axis=1)\n",
+    "reduced_X_valid = X_valid.drop(cols_with_missing, axis=1)\n",
+    "\n",
+    "print(f\"Features remaining: {reduced_X_train.shape[1]} out of {X_train.shape[1]}\")\n",
+    "\n",
+    "mae_drop_cols = evaluate_approach(reduced_X_train, reduced_X_valid, y_train, y_valid, \"Drop Columns\")\n",
+    "print(f\"\\nPerformance (MAE): ${mae_drop_cols:,.2f}\")\n",
+    "print(\"\\n⚠️  Note: We lost potentially useful information by dropping these columns\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "---\n",
+    "\n",
+    "# Method 2: Drop Rows with Missing Values\n",
+    "\n",
+    "**Strategy:** Remove any row that has at least one missing value\n",
+    "\n",
+    "**Best for:** When <5% of rows have missing values and dataset is large\n",
+    "\n",
+    "**Pros:** Clean dataset, no imputation bias\n",
+    "\n",
+    "**Cons:** Can lose significant data if many rows have missing values"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "print(\"=\"*60)\n",
+    "print(\"METHOD 2: DROP ROWS WITH MISSING VALUES\")\n",
+    "print(\"=\"*60)\n",
+    "\n",
+    "X_train_no_missing = X_train.dropna()\n",
+    "y_train_no_missing = y_train[X_train_no_missing.index]\n",
+    "X_valid_no_missing = X_valid.dropna()\n",
+    "y_valid_no_missing = y_valid[X_valid_no_missing.index]\n",
+    "\n",
+    "print(f\"\\nRows after dropping:\")\n",
+    "print(f\"Training: {len(X_train_no_missing)} out of {len(X_train)} ({len(X_train_no_missing)/len(X_train)*100:.1f}%)\")\n",
+    "print(f\"Validation: {len(X_valid_no_missing)} out of {len(X_valid)} ({len(X_valid_no_missing)/len(X_valid)*100:.1f}%)\")\n",
+    "\n",
+    "mae_drop_rows = evaluate_approach(X_train_no_missing, X_valid_no_missing, \n",
+    "                                   y_train_no_missing, y_valid_no_missing, \"Drop Rows\")\n",
+    "print(f\"\\nPerformance (MAE): ${mae_drop_rows:,.2f}\")\n",
+    "print(\"\\n⚠️  Note: We lost a significant amount of data\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "---\n",
+    "\n",
+    "# Method 3: Simple Imputation - Mean\n",
+    "\n",
+    "**Strategy:** Replace missing values with the column average\n",
+    "\n",
+    "**Best for:** Normally distributed data, quick solution\n",
+    "\n",
+    "**Pros:** Fast, simple, keeps all data\n",
+    "\n",
+    "**Cons:** Can distort distribution, doesn't consider feature relationships"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "print(\"=\"*60)\n",
+    "print(\"METHOD 3: SIMPLE IMPUTATION - MEAN\")\n",
+    "print(\"=\"*60)\n",
+    "\n",
+    "imputer_mean = SimpleImputer(strategy='mean')\n",
+    "X_train_mean = pd.DataFrame(imputer_mean.fit_transform(X_train), \n",
+    "                            columns=X_train.columns, \n",
+    "                            index=X_train.index)\n",
+    "X_valid_mean = pd.DataFrame(imputer_mean.transform(X_valid), \n",
+    "                            columns=X_valid.columns, \n",
+    "                            index=X_valid.index)\n",
+    "\n",
+    "print(f\"\\nImputed values (examples):\")\n",
+    "for col in cols_with_missing:\n",
+    "    print(f\"{col}: filled with {imputer_mean.statistics_[X_train.columns.get_loc(col)]:.2f}\")\n",
+    "\n",
+    "mae_mean = evaluate_approach(X_train_mean, X_valid_mean, y_train, y_valid, \"Mean Imputation\")\n",
+    "print(f\"\\nPerformance (MAE): ${mae_mean:,.2f}\")\n",
+    "print(\"\\n✓ Advantage: Simple and fast, keeps all data\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "---\n",
+    "\n",
+    "# Method 4: Simple Imputation - Median\n",
+    "\n",
+    "**Strategy:** Replace missing values with the column median\n",
+    "\n",
+    "**Best for:** Data with outliers or skewed distributions\n",
+    "\n",
+    "**Pros:** More robust to outliers than mean\n",
+    "\n",
+    "**Cons:** Still doesn't consider feature relationships"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "print(\"=\"*60)\n",
+    "print(\"METHOD 4: SIMPLE IMPUTATION - MEDIAN\")\n",
+    "print(\"=\"*60)\n",
+    "\n",
+    "imputer_median = SimpleImputer(strategy='median')\n",
+    "X_train_median = pd.DataFrame(imputer_median.fit_transform(X_train), \n",
+    "                              columns=X_train.columns, \n",
+    "                              index=X_train.index)\n",
+    "X_valid_median = pd.DataFrame(imputer_median.transform(X_valid), \n",
+    "                              columns=X_valid.columns, \n",
+    "                              index=X_valid.index)\n",
+    "\n",
+    "print(f\"\\nImputed values (examples):\")\n",
+    "for col in cols_with_missing:\n",
+    "    print(f\"{col}: filled with {imputer_median.statistics_[X_train.columns.get_loc(col)]:.2f}\")\n",
+    "\n",
+    "mae_median = evaluate_approach(X_train_median, X_valid_median, y_train, y_valid, \"Median Imputation\")\n",
+    "print(f\"\\nPerformance (MAE): ${mae_median:,.2f}\")\n",
+    "print(\"\\n✓ Advantage: More robust to outliers than mean\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "---\n",
+    "\n",
+    "# Method 5: KNN Imputation\n",
+    "\n",
+    "**Strategy:** Fill missing values based on similar rows (k-nearest neighbors)\n",
+    "\n",
+    "**Best for:** When features are correlated, moderate missing data\n",
+    "\n",
+    "**Pros:** Considers relationships between features, often more accurate\n",
+    "\n",
+    "**Cons:** Computationally expensive on large datasets"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "print(\"=\"*60)\n",
+    "print(\"METHOD 5: KNN IMPUTATION\")\n",
+    "print(\"=\"*60)\n",
+    "\n",
+    "imputer_knn = KNNImputer(n_neighbors=5)\n",
+    "X_train_knn = pd.DataFrame(imputer_knn.fit_transform(X_train), \n",
+    "                           columns=X_train.columns, \n",
+    "                           index=X_train.index)\n",
+    "X_valid_knn = pd.DataFrame(imputer_knn.transform(X_valid), \n",
+    "                           columns=X_valid.columns, \n",
+    "                           index=X_valid.index)\n",
+    "\n",
+    "print(f\"\\nUsing 5 nearest neighbors to impute values\")\n",
+    "\n",
+    "mae_knn = evaluate_approach(X_train_knn, X_valid_knn, y_train, y_valid, \"KNN Imputation\")\n",
+    "print(f\"\\nPerformance (MAE): ${mae_knn:,.2f}\")\n",
+    "print(\"\\n✓ Advantage: Considers relationships between features\")\n",
+    "print(\"⚠️  Note: More computationally expensive than simple imputation\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "---\n",
+    "\n",
+    "# Method 6: Iterative Imputation (MICE)\n",
+    "\n",
+    "**Strategy:** Uses machine learning to predict missing values iteratively (Multiple Imputation by Chained Equations)\n",
+    "\n",
+    "**Best for:** Strong feature relationships, highest accuracy needed\n",
+    "\n",
+    "**Pros:** Most sophisticated, often most accurate\n",
+    "\n",
+    "**Cons:** Slowest method, needs sufficient data to train"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "print(\"=\"*60)\n",
+    "print(\"METHOD 6: ITERATIVE IMPUTATION (MICE)\")\n",
+    "print(\"=\"*60)\n",
+    "\n",
+    "imputer_iterative = IterativeImputer(random_state=42, max_iter=10)\n",
+    "X_train_iterative = pd.DataFrame(imputer_iterative.fit_transform(X_train), \n",
+    "                                 columns=X_train.columns, \n",
+    "                                 index=X_train.index)\n",
+    "X_valid_iterative = pd.DataFrame(imputer_iterative.transform(X_valid), \n",
+    "                                 columns=X_valid.columns, \n",
+    "                                 index=X_valid.index)\n",
+    "\n",
+    "print(f\"\\nCompleted {imputer_iterative.n_iter_} iterations\")\n",
+    "\n",
+    "mae_iterative = evaluate_approach(X_train_iterative, X_valid_iterative, \n",
+    "                                   y_train, y_valid, \"Iterative Imputation\")\n",
+    "print(f\"\\nPerformance (MAE): ${mae_iterative:,.2f}\")\n",
+    "print(\"\\n✓ Advantage: Most sophisticated, often most accurate\")\n",
+    "print(\"⚠️  Note: Slowest method, needs sufficient data\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "---\n",
+    "\n",
+    "# Method 7: Imputation + Missing Indicators\n",
+    "\n",
+    "**Strategy:** Impute values AND add columns to flag which values were missing\n",
+    "\n",
+    "**Best for:** When missingness itself is informative (e.g., people not reporting income)\n",
+    "\n",
+    "**Pros:** Preserves information about where data was missing\n",
+    "\n",
+    "**Cons:** Increases number of features"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "print(\"=\"*60)\n",
+    "print(\"METHOD 7: MEDIAN IMPUTATION + MISSING INDICATORS\")\n",
+    "print(\"=\"*60)\n",
+    "\n",
+    "X_train_extended = X_train.copy()\n",
+    "X_valid_extended = X_valid.copy()\n",
+    "\n",
+    "# Add indicator columns\n",
+    "for col in cols_with_missing:\n",
+    "    X_train_extended[col + '_was_missing'] = X_train[col].isnull().astype(int)\n",
+    "    X_valid_extended[col + '_was_missing'] = X_valid[col].isnull().astype(int)\n",
+    "\n",
+    "# Then impute\n",
+    "imputer_extended = SimpleImputer(strategy='median')\n",
+    "X_train_extended[X_train.columns] = imputer_extended.fit_transform(X_train)\n",
+    "X_valid_extended[X_valid.columns] = imputer_extended.transform(X_valid)\n",
+    "\n",
+    "print(f\"\\nAdded {len(cols_with_missing)} indicator columns\")\n",
+    "print(f\"Total features: {X_train_extended.shape[1]}\")\n",
+    "\n",
+    "mae_extended = evaluate_approach(X_train_extended, X_valid_extended, \n",
+    "                                  y_train, y_valid, \"Imputation + Indicators\")\n",
+    "print(f\"\\nPerformance (MAE): ${mae_extended:,.2f}\")\n",
+    "print(\"\\n✓ Advantage: Preserves information about where data was missing\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "---\n",
+    "\n",
+    "# Performance Summary and Comparison\n",
+    "\n",
+    "Now let's compare all methods side-by-side to determine the winner for this dataset."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "print(\"=\"*60)\n",
+    "print(\"PERFORMANCE SUMMARY\")\n",
+    "print(\"=\"*60)\n",
+    "\n",
+    "results = {\n",
+    "    'Method': [\n",
+    "        '1. Drop Columns',\n",
+    "        '2. Drop Rows',\n",
+    "        '3. Mean Imputation',\n",
+    "        '4. Median Imputation',\n",
+    "        '5. KNN Imputation',\n",
+    "        '6. Iterative Imputation',\n",
+    "        '7. Median + Indicators'\n",
+    "    ],\n",
+    "    'MAE': [\n",
+    "        mae_drop_cols,\n",
+    "        mae_drop_rows,\n",
+    "        mae_mean,\n",
+    "        mae_median,\n",
+    "        mae_knn,\n",
+    "        mae_iterative,\n",
+    "        mae_extended\n",
+    "    ]\n",
+    "}\n",
+    "\n",
+    "results_df = pd.DataFrame(results)\n",
+    "results_df = results_df.sort_values('MAE')\n",
+    "results_df['Rank'] = range(1, len(results_df) + 1)\n",
+    "\n",
+    "print(\"\\nRanked by Performance (Lower MAE is better):\")\n",
+    "print(results_df.to_string(index=False))\n",
+    "\n",
+    "best_method = results_df.iloc[0]['Method']\n",
+    "best_mae = results_df.iloc[0]['MAE']\n",
+    "\n",
+    "print(\"\\n\" + \"=\"*60)\n",
+    "print(\"RECOMMENDATION FOR THIS DATASET\")\n",
+    "print(\"=\"*60)\n",
+    "print(f\"\\n🏆 Best performing method: {best_method}\")\n",
+    "print(f\"   MAE: ${best_mae:,.2f}\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Visualize the Results"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "plt.figure(figsize=(12, 6))\n",
+    "plt.barh(results_df['Method'], results_df['MAE'], color='steelblue')\n",
+    "plt.xlabel('Mean Absolute Error (Lower is Better)', fontsize=12)\n",
+    "plt.title('Comparison of Missing Data Handling Methods', fontsize=14, fontweight='bold')\n",
+    "plt.grid(axis='x', alpha=0.3)\n",
+    "plt.tight_layout()\n",
+    "plt.show()\n",
+    "\n",
+    "print(\"📊 Chart displayed above\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "---\n",
+    "\n",
+    "# Practical Decision Guide for Future Projects\n",
+    "\n",
+    "## Quick Decision Tree\n",
+    "\n",
+    "### 1. START HERE: Check missing data percentage\n",
+    "- **<5% missing + large dataset** → Drop Rows\n",
+    "- **>70% missing in specific columns** → Drop Columns\n",
+    "\n",
+    "### 2. FOR QUICK PROTOTYPES:\n",
+    "- Use **Median Imputation** (robust to outliers)\n",
+    "- Fast to implement, decent performance\n",
+    "\n",
+    "### 3. FOR PRODUCTION MODELS:\n",
+    "- Try **KNN or Iterative Imputation**\n",
+    "- Better accuracy, worth the extra computation time\n",
+    "\n",
+    "### 4. IF MISSINGNESS IS MEANINGFUL:\n",
+    "- Use **Imputation + Missing Indicators**\n",
+    "- Example: People not reporting income might be a signal\n",
+    "\n",
+    "### 5. ALWAYS REMEMBER:\n",
+    "- ✅ Fit imputer on TRAINING data only\n",
+    "- ✅ Transform both train and validation with same imputer\n",
+    "- ✅ Test multiple methods - one size doesn't fit all!\n",
+    "\n",
+    "### 6. DATASET-SPECIFIC FACTORS:\n",
+    "- **Correlated features** → KNN or Iterative work best\n",
+    "- **Independent features** → Simple imputation sufficient\n",
+    "- **Outliers present** → Use Median over Mean\n",
+    "- **Time/speed matters** → Simple imputation\n",
+    "- **Accuracy critical** → Iterative imputation"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "---\n",
+    "\n",
+    "# Next Steps\n",
+    "\n",
+    "1. **Apply the best method** to your actual dataset\n",
+    "2. **Monitor model performance** over time\n",
+    "3. **Investigate WHY data is missing** (may reveal insights)\n",
+    "4. **Consider domain-specific imputation** strategies if available\n",
+    "5. **Document your choice** for future reference\n",
+    "\n",
+    "---\n",
+    "\n",
+    "## Template Code for Your Project\n",
+    "\n",
+    "Once you've determined the best method, use this template:\n",
+    "\n",
+    "```python\n",
+    "# Load your data\n",
+    "df = pd.read_csv('your_data.csv')\n",
+    "\n",
+    "# Split features and target\n",
+    "y = df['target_column']\n",
+    "X = df.drop(['target_column'], axis=1)\n",
+    "\n",
+    "# Split train/validation\n",
+    "X_train, X_valid, y_train, y_valid = train_test_split(\n",
+    "    X, y, train_size=0.8, random_state=42\n",
+    ")\n",
+    "\n",
+    "# Apply your chosen imputation method\n",
+    "from sklearn.impute import SimpleImputer  # or KNNImputer, IterativeImputer\n",
+    "\n",
+    "imputer = SimpleImputer(strategy='median')  # adjust as needed\n",
+    "X_train_imputed = imputer.fit_transform(X_train)\n",
+    "X_valid_imputed = imputer.transform(X_valid)\n",
+    "\n",
+    "# Train your model\n",
+    "model = YourModel()\n",
+    "model.fit(X_train_imputed, y_train)\n",
+    "```"
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 3",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.8.0"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 4
+}

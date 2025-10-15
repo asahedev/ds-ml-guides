@@ -5,7 +5,7 @@ A collection of practical, hands-on guides for data science, machine learning, a
 ## 📚 Guides
 
 ### Machine Learning
-- [**Handling Missing Data**](machine-learning/missing-data-handling.ipynb) - Compare 7 different strategies with performance benchmarks
+- [**Handling Missing Data**](machine-learning/missing_data_handling.ipynb) - Compare 7 different strategies with performance benchmarks
 <!---
 - [Feature Engineering](machine-learning/feature-engineering.ipynb) - Coming soon
 

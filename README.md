@@ -1,29 +1,28 @@
 # Data Science and Machine Learning Guides
 
-A collection of practical, hands-on guides for data science, machine learning, and Python development. Each guide includes working code, real examples, and business-focused explanations.
+Personal notes and guides I built while learning data science and machine learning. Each notebook includes working code, real examples, and practical explanations.
+
+> 🚧 This repository is actively growing — new notebooks added regularly.
 
 ## 📚 Guides
 
 ### Machine Learning
 - [**Handling Missing Data**](machine-learning/missing_data_handling.ipynb) - Compare 7 different strategies with performance benchmarks
+
 <!---
 - [Feature Engineering](machine-learning/feature-engineering.ipynb) - Coming soon
-
-### Data Science
-- [Exploratory Data Analysis](data-science/eda-guide.ipynb) - Coming soon
-
-### Python
-- [Pandas Tips & Tricks](python/pandas-tricks.ipynb) - Coming soon
-and here
 -->
 
+### Data Science
+- [**Pandas Basics**](data-science/pandas_basics.ipynb) - Core Pandas concepts with runnable examples and a quick reference cheatsheet
 
+<!---
+- [Exploratory Data Analysis](data-science/eda-guide.ipynb) - Coming soon
+-->
 
 ## 🎯 Who This Is For
-- Data scientists preparing presentations for stakeholders
-- ML engineers comparing different approaches
-- Students learning practical data science
-- Anyone who wants working code, not just theory
+- Students and self-learners getting started with data science
+- Anyone who wants working code they can run and experiment with
 
 ## 🚀 How to Use
 1. Clone the repository
@@ -31,7 +30,7 @@ and here
 3. Run the cells and experiment!
 
 ## 🤝 Contributing
-Found an error? Have a suggestion? Open an issue or submit a PR!
+Found an error or have a suggestion? Open an issue!
 
 ## 📝 License
 MIT License - feel free to use these guides in your own work
